@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: clients
+    // Fields:
+    //   - category: string (private, designer, commercial)
+    //   - name: string
+    //   - email: string (email format)
+    //   - phone: string
+    //   - address: string
+    //   - measurements: string
+    //   - skuSent: string
+    //   - skuOrderedPrinted: string
+    //   - invoiceNumber: string
+    //   - invoiceStatus: string (pending, paid, canceled, deposit)
+    //   - notes: string
+    //   - projectStatus: string (design_selection, measurements, invoice_sent, order_print, received_contacted, ready_for_installation, waiting_for_installation, completed)
+    //   - installationDate: timestamp
+    //   - parentClientId: string
+    //   - projectName: string
+    //   - createdAt: timestamp
+    //   - updatedAt: timestamp
+    //
+    // Collection: bookBorrowing
+    // Fields:
+    //   - name: string
+    //   - numberOfBooks: number
+    //   - bookNames: string
+    //   - notes: string
+    //   - phone: string
+    //   - email: string (email format)
+    //   - paid: bool
+    //   - back: bool
+    //   - createdAt: timestamp
+    //   - updatedAt: timestamp
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email_verified == true &&
+             (request.auth.token.email.lower() == "victoria@decor2go.ca");
+    }
+
+    function isValidEmail(email) {
+      return email is string && (email == "" || email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"));
+    }
+
+    function hasOnlyAllowedFields(data, allowedFields) {
+      return data.keys().hasOnly(allowedFields);
+    }
+
+    // Domain Validators
+    function isValidClient(data) {
+      let allowedFields = [
+        'id', 'category', 'name', 'email', 'phone', 'address', 'measurements',
+        'skuSent', 'skuOrderedPrinted', 'invoiceNumber', 'invoiceStatus',
+        'notes', 'projectStatus', 'installationDate', 'parentClientId', 'projectName', 'createdAt', 'updatedAt'
+      ];
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             data.category in ['private', 'designer', 'commercial'] &&
+             data.invoiceStatus in ['pending', 'paid', 'canceled', 'deposit'] &&
+             data.projectStatus in [
+               'design_selection', 'measurements', 'invoice_sent',
+               'order_print', 'received_contacted', 'ready_for_installation',
+               'waiting_for_installation', 'completed'
+             ] &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             isValidEmail(data.email) &&
+             (!('installationDate' in data) || data.installationDate == null || data.installationDate is timestamp) &&
+             (!('phone' in data) || data.phone is string) &&
+             (!('address' in data) || data.address is string) &&
+             (!('measurements' in data) || data.measurements is string) &&
+             (!('skuSent' in data) || data.skuSent is string) &&
+             (!('skuOrderedPrinted' in data) || data.skuOrderedPrinted is string) &&
+             (!('invoiceNumber' in data) || data.invoiceNumber is string) &&
+             (!('notes' in data) || data.notes is string) &&
+             (!('parentClientId' in data) || data.parentClientId is string) &&
+             (!('projectName' in data) || data.projectName is string) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidBookBorrowing(data) {
+      let allowedFields = [
+        'id', 'name', 'numberOfBooks', 'bookNames', 'notes', 'phone', 'email',
+        'paid', 'back', 'createdAt', 'updatedAt'
+      ];
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.numberOfBooks is number &&
+             isValidEmail(data.email) &&
+             data.paid is bool &&
+             data.back is bool &&
+             (!('bookNames' in data) || data.bookNames is string) &&
+             (!('notes' in data) || data.notes is string) &&
+             (!('phone' in data) || data.phone is string) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // Rules
+    match /clients/{clientId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidClient(request.resource.data);
+      allow update: if isAdmin() && isValidClient(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /bookBorrowing/{borrowingId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidBookBorrowing(request.resource.data);
+      allow update: if isAdmin() && isValidBookBorrowing(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

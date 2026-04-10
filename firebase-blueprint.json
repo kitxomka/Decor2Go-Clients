@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "Client": {
+      "title": "Client",
+      "description": "A client record for the business.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["private", "designer", "commercial"],
+          "description": "The category of the client."
+        },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "measurements": { "type": "string", "description": "Multiline text for measurements." },
+        "skuSent": { "type": "string" },
+        "skuOrderedPrinted": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "invoiceStatus": {
+          "type": "string",
+          "enum": ["pending", "paid", "canceled", "deposit"]
+        },
+        "notes": { "type": "string", "description": "Multiline text for notes." },
+        "projectStatus": {
+          "type": "string",
+          "enum": [
+            "design_selection",
+            "measurements",
+            "invoice_sent",
+            "order_print",
+            "received_contacted",
+            "ready_for_installation",
+            "waiting_for_installation",
+            "completed"
+          ]
+        },
+        "installationDate": { "type": "string", "format": "date-time" },
+        "parentClientId": { "type": "string", "description": "ID of the designer or commercial entity." },
+        "projectName": { "type": "string", "description": "Name of the specific project." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "name", "email", "projectStatus", "invoiceStatus"]
+    },
+    "BookBorrowing": {
+      "title": "BookBorrowing",
+      "description": "A record for a borrowed book.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "numberOfBooks": { "type": "number" },
+        "bookNames": { "type": "string", "description": "Multiline text for book names." },
+        "notes": { "type": "string", "description": "Multiline text for notes." },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "paid": { "type": "boolean" },
+        "back": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "numberOfBooks", "email"]
+    }
+  },
+  "firestore": {
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Collection of business clients."
+    },
+    "/bookBorrowing/{borrowingId}": {
+      "schema": "BookBorrowing",
+      "description": "Collection of book borrowing records."
+    }
+  }
+}
