@@ -44,8 +44,13 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
       // Convert Timestamp to date string for the input
       const data = { ...client };
       if (data.installationDate instanceof Timestamp) {
+        // Use local date components to avoid timezone shifts
+        const d = data.installationDate.toDate();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
         // @ts-ignore - we're temporarily storing string in the Partial<Client> for the input
-        data.installationDate = data.installationDate.toDate().toISOString().split('T')[0];
+        data.installationDate = `${year}-${month}-${day}`;
       }
       setFormData(data);
     }
@@ -60,7 +65,10 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
       
       // Ensure installationDate is handled correctly if it's a string from the input
       if (typeof dataToSave.installationDate === 'string' && dataToSave.installationDate) {
-        dataToSave.installationDate = Timestamp.fromDate(new Date(dataToSave.installationDate));
+        // Parse the YYYY-MM-DD string as local midnight to avoid timezone shifts
+        const [year, month, day] = dataToSave.installationDate.split('-').map(Number);
+        const localDate = new Date(year, month - 1, day);
+        dataToSave.installationDate = Timestamp.fromDate(localDate);
       } else if (!dataToSave.installationDate) {
         dataToSave.installationDate = null;
       }
