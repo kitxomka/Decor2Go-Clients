@@ -40,7 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Search, Filter, Edit2, Trash2, User, Phone, Mail, FileText, CheckCircle2, XCircle, LogIn, LogOut } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, User, Phone, Mail, FileText, CheckCircle2, XCircle, LogIn, LogOut, Copy, Calendar, AlertCircle } from 'lucide-react';
 import { ClientForm } from './ClientForm';
 import { BookBorrowingForm } from './BookBorrowingForm';
 import { InvoiceStatusBadge, ProjectStatusBadge } from './StatusBadge';
@@ -58,6 +58,8 @@ export function Dashboard() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [projectFilter, setProjectFilter] = useState<string>('all');
+  const [taskFilter, setTaskFilter] = useState<boolean>(false);
+  const [todayFilter, setTodayFilter] = useState<boolean>(false);
 
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
   const [isBorrowingDialogOpen, setIsBorrowingDialogOpen] = useState(false);
@@ -130,7 +132,34 @@ export function Dashboard() {
       const matchesStatus = statusFilter === 'all' || client.invoiceStatus === statusFilter;
       const matchesProject = projectFilter === 'all' || client.projectStatus === projectFilter;
 
-      return matchesCategory && matchesSearch && matchesStatus && matchesProject;
+      let matchesTask = true;
+      if (taskFilter) {
+        matchesTask = (client.nextStep && client.nextStep.trim() !== '') || 
+                     client.invoiceStatus === 'pending' || 
+                     client.projectStatus !== 'completed';
+      }
+
+      let matchesToday = true;
+      if (todayFilter) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const inThreeDays = new Date();
+        inThreeDays.setDate(today.getDate() + 3);
+        inThreeDays.setHours(23, 59, 59, 999);
+
+        const hasNextStep = client.nextStep && client.nextStep.trim() !== '';
+        const isPending = client.invoiceStatus === 'pending';
+        
+        let hasInstallationSoon = false;
+        if (client.installationDate) {
+          const instDate = client.installationDate.toDate();
+          hasInstallationSoon = instDate >= today && instDate <= inThreeDays;
+        }
+
+        matchesToday = hasNextStep || isPending || hasInstallationSoon;
+      }
+
+      return matchesCategory && matchesSearch && matchesStatus && matchesProject && matchesTask && matchesToday;
     });
 
     // Sort: Completed projects at the bottom, group by parent, then by updatedAt desc
@@ -157,7 +186,7 @@ export function Dashboard() {
       const dateB = b.updatedAt?.toDate().getTime() || 0;
       return dateB - dateA;
     });
-  }, [clients, activeTab, search, statusFilter, projectFilter]);
+  }, [clients, activeTab, search, statusFilter, projectFilter, taskFilter, todayFilter]);
 
   const filteredBorrowings = useMemo(() => {
     return borrowings.filter(b => 
@@ -182,6 +211,20 @@ export function Dashboard() {
     } catch (error) {
       console.error("Logout failed", error);
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const copySummary = (client: Client) => {
+    const summary = [
+      client.name,
+      client.projectName ? `Project: ${client.projectName}` : '',
+      client.measurements ? `Measurements: ${client.measurements}` : '',
+      client.notes ? `Notes: ${client.notes}` : ''
+    ].filter(Boolean).join('\n');
+    copyToClipboard(summary);
   };
 
   if (authLoading) {
@@ -301,7 +344,7 @@ export function Dashboard() {
     <div className="min-h-screen bg-gray-50 flex flex-col" data-testid="dashboard-root">
       {/* Header */}
       <header className="glass sticky top-0 z-10 border-b border-white/20" data-testid="dashboard-header">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Logo className="h-10 w-10 object-contain" />
             <h1 className="text-xl font-bold text-gray-900 tracking-tight">Decor2Go Clients</h1>
@@ -320,7 +363,7 @@ export function Dashboard() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="dashboard-main">
+      <main className="flex-1 w-full mx-auto px-2 sm:px-4 lg:px-6 py-6" data-testid="dashboard-main">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6" data-testid="dashboard-tabs">
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <div className="flex flex-col md:flex-row md:items-center !gap-4">
@@ -423,6 +466,34 @@ export function Dashboard() {
                   </div>
                 </>
               )}
+              {activeTab !== 'book_borrowing' && (
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant={taskFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setTaskFilter(!taskFilter);
+                      if (!taskFilter) setTodayFilter(false);
+                    }}
+                    className={`!h-[45px] px-4 rounded-xl modern-shadow transition-all cursor-pointer ${taskFilter ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent' : 'bg-white/80 border-gray-200/50 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    Active Tasks
+                  </Button>
+                  <Button 
+                    variant={todayFilter ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setTodayFilter(!todayFilter);
+                      if (!todayFilter) setTaskFilter(false);
+                    }}
+                    className={`!h-[45px] px-4 rounded-xl modern-shadow transition-all cursor-pointer ${todayFilter ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-transparent' : 'bg-white/80 border-gray-200/50 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <Calendar className="h-4 w-4 mr-2" />
+                    Today
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2" data-testid="action-buttons">
@@ -463,22 +534,23 @@ export function Dashboard() {
           {/* Client Tabs */}
           {['all', 'private', 'designer', 'commercial'].map((tab) => (
             <TabsContent key={tab} value={tab} className="mt-0" data-testid={`tab-content-${tab}`}>
-              <div className="modern-card overflow-hidden">
+              <div className="modern-card">
                 {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table className="modern-table" data-testid={`table-${tab}`}>
+                <div className="hidden md:block">
+                  <Table className="modern-table w-full table-auto" data-testid={`table-${tab}`}>
                     <TableHeader>
                       <TableRow className="bg-gray-50/30">
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[200px]">Name</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[180px]">Contact</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Invoice</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Project Status</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Installation Date</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">SKUs</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[180px]">Name</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Next Step</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Contact</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[100px]">Invoice</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[140px]">Project Status</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Installation</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[140px]">SKUs</TableHead>
                         <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Measurements</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Notes</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Updated</TableHead>
-                        <TableHead className="text-right font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 sticky right-0 bg-white/95 backdrop-blur-sm">Actions</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[180px]">Notes</TableHead>
+                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[100px]">Updated</TableHead>
+                        <TableHead className="text-right font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 whitespace-nowrap">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -497,7 +569,7 @@ export function Dashboard() {
                           >
                             <TableCell>
                               <div className="flex flex-col">
-                                <div className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors">
+                                <div className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors flex items-center flex-wrap gap-1 group/name-copy">
                                   {client.parentClientId ? (
                                     <>
                                       <span>{client.name}</span>
@@ -507,8 +579,20 @@ export function Dashboard() {
                                       </span>
                                     </>
                                   ) : (
-                                    client.name
+                                    <span>{client.name}</span>
                                   )}
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-4 w-4 ml-1 opacity-0 group-hover/name-copy:opacity-100 transition-opacity"
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      copyToClipboard(client.name); 
+                                    }}
+                                    title="Copy Name"
+                                  >
+                                    <Copy className="h-2.5 w-2.5" />
+                                  </Button>
                                 </div>
                                 {client.projectName && (
                                   <div className="mt-1">
@@ -517,18 +601,32 @@ export function Dashboard() {
                                     </span>
                                   </div>
                                 )}
-                                <div className="text-xs text-gray-500 truncate max-w-[200px] mt-1">
+                                <div className="text-xs text-gray-500 mt-1">
                                   {client.address}
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex flex-col gap-1 text-sm text-gray-600">
-                                <div className="flex items-center">
+                              <div className="text-sm font-medium text-indigo-700 bg-indigo-50/50 px-3 py-1 rounded-lg border border-indigo-100 min-h-[32px] flex items-center">
+                                {client.nextStep || <span className="text-gray-300 italic text-[10px]">No next step</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1 text-sm text-gray-600 break-words">
+                                <div className="flex items-center gap-1 group/copy flex-wrap">
                                   <Mail className="h-3 w-3 mr-1.5 opacity-60" />
-                                  {client.email}
+                                  <span className="truncate">{client.email}</span>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-4 w-4 ml-1 opacity-0 group-hover/copy:opacity-100 transition-opacity"
+                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(client.email); }}
+                                    title="Copy Email"
+                                  >
+                                    <Copy className="h-2.5 w-2.5" />
+                                  </Button>
                                 </div>
-                                <div className="flex items-center">
+                                <div className="flex items-center group/copy">
                                   <Phone className="h-3 w-3 mr-1.5 opacity-60" />
                                   {client.phone}
                                 </div>
@@ -537,7 +635,20 @@ export function Dashboard() {
                             <TableCell>
                               <div className="flex flex-col gap-1">
                                 <InvoiceStatusBadge status={client.invoiceStatus} />
-                                <div className="text-xs font-mono text-gray-400">#{client.invoiceNumber || 'N/A'}</div>
+                                <div className="text-xs font-mono text-gray-400 flex items-center group/copy">
+                                  #{client.invoiceNumber || 'N/A'}
+                                  {client.invoiceNumber && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-4 w-4 ml-1 opacity-0 group-hover/copy:opacity-100 transition-opacity"
+                                      onClick={(e) => { e.stopPropagation(); copyToClipboard(client.invoiceNumber); }}
+                                      title="Copy Invoice Number"
+                                    >
+                                      <Copy className="h-2.5 w-2.5" />
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell>
@@ -552,34 +663,55 @@ export function Dashboard() {
                               <div className="text-xs space-y-1">
                                 <div className="flex items-center gap-1">
                                   <span className="text-gray-400 font-semibold">Sent:</span>
-                                  <span className="text-gray-600 truncate max-w-[100px]">{client.skuSent || '-'}</span>
+                                  <span className="text-gray-600">{client.skuSent || '-'}</span>
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <span className="text-gray-400 font-semibold">Print:</span>
-                                  <span className="text-gray-600 truncate max-w-[100px]">{client.skuOrderedPrinted || '-'}</span>
+                                  <span className="text-gray-600">{client.skuOrderedPrinted || '-'}</span>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px]">
+                              <div className="text-xs text-gray-600 relative group/copy">
                                 {client.measurements || '-'}
+                                {client.measurements && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 absolute -right-2 top-0 opacity-0 group-hover/copy:opacity-100 transition-opacity bg-white/90 shadow-sm"
+                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(client.measurements); }}
+                                    title="Copy Measurements"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px]">
+                              <div className="text-xs text-gray-600">
                                 {client.notes || '-'}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm text-gray-500">
                               {format(client.updatedAt.toDate(), 'MMM d, yy')}
                             </TableCell>
-                            <TableCell className="text-right sticky right-0 bg-white group-hover:bg-indigo-50/30">
+                            <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={(e) => { e.stopPropagation(); copySummary(client); }} 
+                                  className="h-8 w-8 text-indigo-400 hover:text-indigo-600 cursor-pointer"
+                                  title="Copy Summary"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Button>
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
                                   onClick={(e) => { e.stopPropagation(); handleEditClient(client); }} 
                                   className="h-8 w-8 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                                  title="Edit"
                                 >
                                   <Edit2 className="h-4 w-4" />
                                 </Button>
@@ -588,6 +720,7 @@ export function Dashboard() {
                                   size="icon" 
                                   onClick={(e) => { e.stopPropagation(); handleDeleteClick(client.id!, 'clients'); }} 
                                   className="h-8 w-8 text-gray-400 hover:text-red-600 cursor-pointer"
+                                  title="Delete"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -606,13 +739,35 @@ export function Dashboard() {
                     <div className="p-8 text-center text-gray-500">No clients found.</div>
                   ) : (
                     filteredClients.map((client) => (
-                      <div key={client.id} className="p-4 space-y-3">
+                      <div key={client.id} className="p-4 space-y-3 hover:bg-gray-50/80 transition-colors">
                         <div className="flex justify-between items-start">
                           <div>
-                            <div className="font-bold text-gray-900">{client.name}</div>
+                            <div className="font-bold text-gray-900 flex items-center group/name-copy">
+                              {client.name}
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-4 w-4 ml-1 opacity-60 hover:opacity-100"
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  copyToClipboard(client.name); 
+                                }}
+                                title="Copy Name"
+                              >
+                                <Copy className="h-2.5 w-2.5" />
+                              </Button>
+                            </div>
+                            {client.nextStep && (
+                              <div className="mt-1 text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 italic">
+                                Next: {client.nextStep}
+                              </div>
+                            )}
                             <div className="text-xs text-gray-500 mt-1">{client.address}</div>
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={() => copySummary(client)} className="h-8 w-8 cursor-pointer text-indigo-500" title="Copy Summary">
+                              <FileText className="h-4 w-4" />
+                            </Button>
                             <Button variant="ghost" size="icon" onClick={() => handleEditClient(client)} className="h-8 w-8 cursor-pointer">
                               <Edit2 className="h-4 w-4" />
                             </Button>

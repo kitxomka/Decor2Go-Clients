@@ -31,6 +31,7 @@ export interface Client {
   installationDate?: Timestamp | null;
   parentClientId?: string;
   projectName?: string;
+  nextStep?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
