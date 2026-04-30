@@ -37,7 +37,6 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
     installationDate: null,
     parentClientId: '',
     projectName: '',
-    nextStep: '',
   });
 
   useEffect(() => {
@@ -139,15 +138,6 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
             />
           </div>
         )}
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="nextStep">Next Step</Label>
-          <Input 
-            id="nextStep" 
-            placeholder="e.g. Follow up on Tuesday"
-            value={formData.nextStep || ''} 
-            onChange={(e) => setFormData({ ...formData, nextStep: e.target.value })} 
-          />
-        </div>
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="email">Email</Label>
           <Input 
