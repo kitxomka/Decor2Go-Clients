@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { InvoiceStatus, ProjectStatus } from '@/src/types';
+import { InvoiceStatus, ProjectStatus, OrderStatus } from '@/src/types';
 
 export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
   const variants: Record<InvoiceStatus, string> = {
@@ -31,6 +31,20 @@ export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   return (
     <Badge className={`${variants[status]} capitalize border-none`} data-testid={`project-status-${status}`}>
       {status.replace(/_/g, ' ')}
+    </Badge>
+  );
+}
+
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  const variants: Record<OrderStatus, string> = {
+    none: 'bg-gray-100 text-gray-800 hover:bg-gray-100',
+    ordered: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+    received: 'bg-green-100 text-green-800 hover:bg-green-100',
+  };
+
+  return (
+    <Badge className={`${variants[status || 'none']} capitalize border-none`} data-testid={`order-status-${status}`}>
+      {status === 'none' ? 'No Order' : status}
     </Badge>
   );
 }

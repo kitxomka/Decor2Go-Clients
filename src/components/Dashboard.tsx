@@ -11,7 +11,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
-import { Client, BookBorrowing, ClientCategory, InvoiceStatus, ProjectStatus } from '../types';
+import { Client, BookBorrowing, Order, ClientCategory, InvoiceStatus, ProjectStatus } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firebase-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -43,7 +43,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Search, Filter, Edit2, Trash2, User, Phone, Mail, FileText, CheckCircle2, XCircle, LogIn, LogOut, Copy } from 'lucide-react';
 import { ClientForm } from './ClientForm';
 import { BookBorrowingForm } from './BookBorrowingForm';
-import { InvoiceStatusBadge, ProjectStatusBadge } from './StatusBadge';
+import { OrderForm } from './OrderForm';
+import { InvoiceStatusBadge, ProjectStatusBadge, OrderStatusBadge } from './StatusBadge';
 import { Logo } from './Logo';
 import { format } from 'date-fns';
 
@@ -52,17 +53,21 @@ export function Dashboard() {
   const [authLoading, setAuthLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [borrowings, setBorrowings] = useState<BookBorrowing[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState('clients');
   
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [projectFilter, setProjectFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
   const [isBorrowingDialogOpen, setIsBorrowingDialogOpen] = useState(false);
+  const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | undefined>();
   const [editingBorrowing, setEditingBorrowing] = useState<BookBorrowing | undefined>();
+  const [editingOrder, setEditingOrder] = useState<Order | undefined>();
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<{ id: string, collection: string } | null>(null);
@@ -95,29 +100,40 @@ export function Dashboard() {
       setBorrowings(data);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookBorrowing'));
 
+    const ordersQuery = query(collection(db, 'orders'), orderBy('updatedAt', 'desc'));
+    const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      setOrders(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
+
     return () => {
       unsubscribeClients();
       unsubscribeBorrowings();
+      unsubscribeOrders();
     };
   }, [user]);
 
   const filteredClients = useMemo(() => {
     const filtered = clients.filter(client => {
-      let matchesCategory = false;
-      if (activeTab === 'all') {
-        matchesCategory = true;
-      } else if (activeTab === 'designer') {
-        const isDesigner = client.category === 'designer';
-        const parent = client.parentClientId ? clients.find(c => c.id === client.parentClientId) : null;
-        const isLinkedToDesigner = parent?.category === 'designer';
-        matchesCategory = isDesigner || isLinkedToDesigner;
-      } else if (activeTab === 'commercial') {
-        const isCommercial = client.category === 'commercial';
-        const parent = client.parentClientId ? clients.find(c => c.id === client.parentClientId) : null;
-        const isLinkedToCommercial = parent?.category === 'commercial';
-        matchesCategory = isCommercial || isLinkedToCommercial;
-      } else {
-        matchesCategory = client.category === activeTab;
+      let matchesCategory = true;
+      if (activeTab === 'clients') {
+        if (categoryFilter !== 'all') {
+          if (categoryFilter === 'designer') {
+            const isDesigner = client.category === 'designer';
+            const parent = client.parentClientId ? clients.find(c => c.id === client.parentClientId) : null;
+            const isLinkedToDesigner = parent?.category === 'designer';
+            matchesCategory = isDesigner || isLinkedToDesigner;
+          } else if (categoryFilter === 'commercial') {
+            const isCommercial = client.category === 'commercial';
+            const parent = client.parentClientId ? clients.find(c => c.id === client.parentClientId) : null;
+            const isLinkedToCommercial = parent?.category === 'commercial';
+            matchesCategory = isCommercial || isLinkedToCommercial;
+          } else {
+            matchesCategory = client.category === categoryFilter;
+          }
+        }
+      } else if (activeTab === 'orders') {
+        matchesCategory = false; // We use filteredOrders for the orders tab now
       }
 
       const matchesSearch = 
@@ -157,7 +173,7 @@ export function Dashboard() {
       const dateB = b.updatedAt?.toDate().getTime() || 0;
       return dateB - dateA;
     });
-  }, [clients, activeTab, search, statusFilter, projectFilter]);
+  }, [clients, activeTab, search, statusFilter, projectFilter, categoryFilter]);
 
   const filteredBorrowings = useMemo(() => {
     return borrowings.filter(b => 
@@ -166,6 +182,13 @@ export function Dashboard() {
       (b.phone || '').includes(search)
     );
   }, [borrowings, search]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => 
+      (o.clientName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (o.invoiceNumber || '').toLowerCase().includes(search.toLowerCase())
+    );
+  }, [orders, search]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -287,6 +310,11 @@ export function Dashboard() {
     setIsBorrowingDialogOpen(true);
   };
 
+  const handleEditOrder = (order: Order) => {
+    setEditingOrder(order);
+    setIsOrderDialogOpen(true);
+  };
+
   const handleAddProject = (parent: Client) => {
     setEditingClient({
       category: 'private',
@@ -309,6 +337,11 @@ export function Dashboard() {
   const resetBorrowingDialog = () => {
     setEditingBorrowing(undefined);
     setIsBorrowingDialogOpen(false);
+  };
+
+  const resetOrderDialog = () => {
+    setEditingOrder(undefined);
+    setIsOrderDialogOpen(false);
   };
 
   return (
@@ -338,38 +371,24 @@ export function Dashboard() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6" data-testid="dashboard-tabs">
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <div className="flex flex-col md:flex-row md:items-center !gap-4">
-              <TabsList className="bg-white/80 backdrop-blur-sm border border-gray-200/50 p-0 !h-[45px] w-fit flex items-center rounded-xl modern-shadow overflow-hidden shrink-0" data-testid="tabs-list">
+              <TabsList className="bg-white/80 backdrop-blur-sm border border-gray-200/50 p-0 !h-[55px] w-fit flex items-center rounded-xl modern-shadow overflow-hidden shrink-0" data-testid="tabs-list">
                 <TabsTrigger 
-                  value="all" 
-                  className="cursor-pointer px-5 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-2px_0_0_theme(colors.indigo.600)] font-medium text-sm border-r border-gray-100 last:border-r-0"
-                  data-testid="tab-all"
+                  value="clients" 
+                  className="cursor-pointer px-10 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-3px_0_0_theme(colors.indigo.600)] font-bold text-base border-r border-gray-100 last:border-r-0"
+                  data-testid="tab-clients"
                 >
-                  All
+                  Clients
                 </TabsTrigger>
                 <TabsTrigger 
-                  value="private" 
-                  className="cursor-pointer px-5 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-2px_0_0_theme(colors.indigo.600)] font-medium text-sm border-r border-gray-100 last:border-r-0"
-                  data-testid="tab-private"
+                  value="orders" 
+                  className="cursor-pointer px-10 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-3px_0_0_theme(colors.indigo.600)] font-bold text-base border-r border-gray-100 last:border-r-0"
+                  data-testid="tab-orders"
                 >
-                  Private
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="designer" 
-                  className="cursor-pointer px-5 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-2px_0_0_theme(colors.indigo.600)] font-medium text-sm border-r border-gray-100 last:border-r-0"
-                  data-testid="tab-designer"
-                >
-                  Designers
-                </TabsTrigger>
-                <TabsTrigger 
-                  value="commercial" 
-                  className="cursor-pointer px-5 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-2px_0_0_theme(colors.indigo.600)] font-medium text-sm border-r border-gray-100 last:border-r-0"
-                  data-testid="tab-commercial"
-                >
-                  Commercial
+                  Orders
                 </TabsTrigger>
                 <TabsTrigger 
                   value="book_borrowing" 
-                  className="cursor-pointer px-5 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-2px_0_0_theme(colors.indigo.600)] font-medium text-sm border-r border-gray-100 last:border-r-0"
+                  className="cursor-pointer px-10 h-full rounded-none transition-all hover:text-indigo-600 data-active:bg-indigo-50/40 data-active:text-indigo-700 data-active:shadow-[inset_0_-3px_0_0_theme(colors.indigo.600)] font-bold text-base border-r border-gray-100 last:border-r-0"
                   data-testid="tab-book-borrowing"
                 >
                   Book Borrowing
@@ -389,14 +408,33 @@ export function Dashboard() {
               </div>
 
               {/* Filters Container */}
-              {activeTab !== 'book_borrowing' && (
+              {activeTab === 'clients' && (
                 <>
-                  <div className="w-[220px] shrink-0">
+                  <div className="w-[180px] shrink-0">
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                      <SelectTrigger className="cursor-pointer !h-[45px] text-sm bg-white/80 backdrop-blur-sm border-gray-200/50 modern-shadow rounded-xl px-3 hover:bg-gray-50 transition-colors">
+                        <span className="flex items-center gap-2 truncate">
+                          <User className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                          <span className="text-gray-500 font-medium shrink-0">Category:</span>
+                          <span className="truncate">
+                            <SelectValue placeholder="All" />
+                          </span>
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        <SelectItem value="private">Private</SelectItem>
+                        <SelectItem value="designer">Designer</SelectItem>
+                        <SelectItem value="commercial">Commercial</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-[200px] shrink-0">
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="cursor-pointer !h-[45px] text-sm bg-white/80 backdrop-blur-sm border-gray-200/50 modern-shadow rounded-xl px-3 hover:bg-gray-50 transition-colors">
                         <span className="flex items-center gap-2 truncate">
                           <Filter className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                          <span className="text-gray-500 font-medium shrink-0">Invoice status:</span>
+                          <span className="text-gray-500 font-medium shrink-0">Invoice:</span>
                           <span className="truncate">
                             <SelectValue placeholder="All" />
                           </span>
@@ -411,12 +449,12 @@ export function Dashboard() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="w-[220px] shrink-0">
+                  <div className="w-[200px] shrink-0">
                     <Select value={projectFilter} onValueChange={setProjectFilter}>
                       <SelectTrigger className="cursor-pointer !h-[45px] text-sm bg-white/80 backdrop-blur-sm border-gray-200/50 modern-shadow rounded-xl px-3 hover:bg-gray-50 transition-colors">
                         <span className="flex items-center gap-2 truncate">
                           <Filter className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                          <span className="text-gray-500 font-medium shrink-0">Project status:</span>
+                          <span className="text-gray-500 font-medium shrink-0">Project:</span>
                           <span className="truncate">
                             <SelectValue placeholder="All" />
                           </span>
@@ -455,6 +493,21 @@ export function Dashboard() {
                     <BookBorrowingForm record={editingBorrowing} onClose={resetBorrowingDialog} />
                   </DialogContent>
                 </Dialog>
+              ) : activeTab === 'orders' ? (
+                <Dialog open={isOrderDialogOpen} onOpenChange={setIsOrderDialogOpen}>
+                  <DialogTrigger render={
+                    <Button onClick={() => setEditingOrder(undefined)} className="bg-indigo-600 hover:bg-indigo-700 cursor-pointer" data-testid="add-order-btn">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Record
+                    </Button>
+                  } />
+                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="order-dialog">
+                    <DialogHeader>
+                      <DialogTitle>{editingOrder ? 'Edit Order' : 'Add New Order'}</DialogTitle>
+                    </DialogHeader>
+                    <OrderForm order={editingOrder} onClose={resetOrderDialog} />
+                  </DialogContent>
+                </Dialog>
               ) : (
                 <Dialog open={isClientDialogOpen} onOpenChange={setIsClientDialogOpen}>
                   <DialogTrigger render={
@@ -474,261 +527,341 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Client Tabs */}
-          {['all', 'private', 'designer', 'commercial'].map((tab) => (
-            <TabsContent key={tab} value={tab} className="mt-0" data-testid={`tab-content-${tab}`}>
-              <div className="modern-card overflow-hidden">
-                {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto">
-                  <Table className="modern-table" data-testid={`table-${tab}`}>
-                    <TableHeader>
-                      <TableRow className="bg-transparent">
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[200px]">Name</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[180px]">Contact</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Invoice</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Project Status</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Installation Date</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">SKUs</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Measurements</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Notes</TableHead>
-                        <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Updated</TableHead>
-                        <TableHead className="text-right font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 sticky right-0 bg-white/95 backdrop-blur-sm">Actions</TableHead>
+          {/* Clients Tab */}
+          <TabsContent value="clients" className="mt-0" data-testid="tab-content-clients">
+            <div className="modern-card overflow-hidden">
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="modern-table" data-testid="table-clients">
+                  <TableHeader>
+                    <TableRow className="bg-transparent">
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[200px]">Name</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[180px]">Contact</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Invoice</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Project Status</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Installation Date</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">SKUs</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Measurements</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[150px]">Notes</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 min-w-[120px]">Updated</TableHead>
+                      <TableHead className="text-right font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4 sticky right-0 bg-white/95 backdrop-blur-sm">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredClients.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={10} className="h-32 text-center text-gray-500">
+                          No clients found matching your criteria.
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredClients.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={10} className="h-32 text-center text-gray-500">
-                            No clients found matching your criteria.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredClients.map((client) => (
-                          <TableRow 
-                            key={client.id} 
-                            className="hover:bg-gray-50 transition-colors cursor-pointer group border-b border-gray-50 last:border-0"
-                            onClick={() => handleEditClient(client)}
-                          >
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <div className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors flex items-center group/name-copy">
-                                  {client.parentClientId ? (
-                                    <>
-                                      <span>{client.name}</span>
-                                      <span className="mx-1 text-gray-400">/</span>
-                                      <span className="text-indigo-600 font-semibold">
-                                        {clients.find(c => c.id === client.parentClientId)?.name || 'Unknown'}
-                                      </span>
-                                    </>
-                                  ) : (
+                    ) : (
+                      filteredClients.map((client) => (
+                        <TableRow 
+                          key={client.id} 
+                          className="hover:bg-gray-50 transition-colors cursor-pointer group border-b border-gray-50 last:border-0"
+                          onClick={() => handleEditClient(client)}
+                        >
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <div className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors flex items-center group/name-copy">
+                                {client.parentClientId ? (
+                                  <>
                                     <span>{client.name}</span>
-                                  )}
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-4 w-4 ml-1 opacity-0 group-hover/name-copy:opacity-100 transition-opacity"
-                                    onClick={(e) => { 
-                                      e.stopPropagation(); 
-                                      copyToClipboard(client.name); 
-                                    }}
-                                    title="Copy Name"
-                                  >
-                                    <Copy className="h-2.5 w-2.5" />
-                                  </Button>
-                                </div>
-                                {client.projectName && (
-                                  <div className="mt-1">
-                                    <span className="text-[10px] font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                                      Project: {client.projectName}
+                                    <span className="mx-1 text-gray-400">/</span>
+                                    <span className="text-indigo-600 font-semibold">
+                                      {clients.find(c => c.id === client.parentClientId)?.name || 'Unknown'}
                                     </span>
-                                  </div>
+                                  </>
+                                ) : (
+                                  <span>{client.name}</span>
                                 )}
-                                <div className="text-xs text-gray-500 truncate max-w-[200px] mt-1">
-                                  {client.address}
-                                </div>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-4 w-4 ml-1 opacity-0 group-hover/name-copy:opacity-100 transition-opacity"
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    copyToClipboard(client.name); 
+                                  }}
+                                  title="Copy Name"
+                                >
+                                  <Copy className="h-2.5 w-2.5" />
+                                </Button>
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1 text-sm text-gray-600">
-                                <div className="flex items-center group/copy">
-                                  <Mail className="h-3 w-3 mr-1.5 opacity-60" />
-                                  <span className="truncate">{client.email}</span>
+                              {client.projectName && (
+                                <div className="mt-1">
+                                  <span className="text-[10px] font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                                    Project: {client.projectName}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-500 truncate max-w-[200px] mt-1">
+                                {client.address}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1 text-sm text-gray-600">
+                              <div className="flex items-center group/copy">
+                                <Mail className="h-3 w-3 mr-1.5 opacity-60" />
+                                <span className="truncate">{client.email}</span>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-4 w-4 ml-1 opacity-0 group-hover/copy:opacity-100 transition-opacity"
+                                  onClick={(e) => { e.stopPropagation(); copyToClipboard(client.email); }}
+                                  title="Copy Email"
+                                >
+                                  <Copy className="h-2.5 w-2.5" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center group/copy">
+                                <Phone className="h-3 w-3 mr-1.5 opacity-60" />
+                                {client.phone}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <InvoiceStatusBadge status={client.invoiceStatus} />
+                              <div className="text-xs font-mono text-gray-400 flex items-center group/copy">
+                                #{client.invoiceNumber || 'N/A'}
+                                {client.invoiceNumber && (
                                   <Button 
                                     variant="ghost" 
                                     size="icon" 
                                     className="h-4 w-4 ml-1 opacity-0 group-hover/copy:opacity-100 transition-opacity"
-                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(client.email); }}
-                                    title="Copy Email"
+                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(client.invoiceNumber); }}
+                                    title="Copy Invoice Number"
                                   >
                                     <Copy className="h-2.5 w-2.5" />
                                   </Button>
-                                </div>
-                                <div className="flex items-center group/copy">
-                                  <Phone className="h-3 w-3 mr-1.5 opacity-60" />
-                                  {client.phone}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                <InvoiceStatusBadge status={client.invoiceStatus} />
-                                <div className="text-xs font-mono text-gray-400 flex items-center group/copy">
-                                  #{client.invoiceNumber || 'N/A'}
-                                  {client.invoiceNumber && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-4 w-4 ml-1 opacity-0 group-hover/copy:opacity-100 transition-opacity"
-                                      onClick={(e) => { e.stopPropagation(); copyToClipboard(client.invoiceNumber); }}
-                                      title="Copy Invoice Number"
-                                    >
-                                      <Copy className="h-2.5 w-2.5" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <ProjectStatusBadge status={client.projectStatus} />
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm text-gray-600">
-                                {client.installationDate ? format(client.installationDate.toDate(), 'MMM d, yy') : '-'}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-xs space-y-1">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-gray-400 font-semibold">Sent:</span>
-                                  <span className="text-gray-600 truncate max-w-[100px]">{client.skuSent || '-'}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-gray-400 font-semibold">Print:</span>
-                                  <span className="text-gray-600 truncate max-w-[100px]">{client.skuOrderedPrinted || '-'}</span>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px] relative group/copy">
-                                {client.measurements || '-'}
-                                {client.measurements && (
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-6 w-6 absolute -right-2 top-0 opacity-0 group-hover/copy:opacity-100 transition-opacity bg-white/90 shadow-sm"
-                                    onClick={(e) => { e.stopPropagation(); copyToClipboard(client.measurements); }}
-                                    title="Copy Measurements"
-                                  >
-                                    <Copy className="h-3 w-3" />
-                                  </Button>
                                 )}
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px]">
-                                {client.notes || '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <ProjectStatusBadge status={client.projectStatus} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-600">
+                              {client.installationDate ? format(client.installationDate.toDate(), 'MMM d, yy') : '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs space-y-1">
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-400 font-semibold">Sent:</span>
+                                <span className="text-gray-600 truncate max-w-[100px]">{client.skuSent || '-'}</span>
                               </div>
-                            </TableCell>
-                            <TableCell className="text-sm text-gray-500">
-                              {format(client.updatedAt.toDate(), 'MMM d, yy')}
-                            </TableCell>
-                            <TableCell className="text-right sticky right-0 bg-white group-hover:bg-indigo-50/30">
-                              <div className="flex justify-end gap-2">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={(e) => { e.stopPropagation(); copySummary(client); }} 
-                                  className="h-8 w-8 text-indigo-400 hover:text-indigo-600 cursor-pointer"
-                                  title="Copy Summary"
-                                >
-                                  <FileText className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={(e) => { e.stopPropagation(); handleEditClient(client); }} 
-                                  className="h-8 w-8 text-gray-400 hover:text-indigo-600 cursor-pointer"
-                                  title="Edit"
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteClick(client.id!, 'clients'); }} 
-                                  className="h-8 w-8 text-gray-400 hover:text-red-600 cursor-pointer"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-400 font-semibold">Print:</span>
+                                <span className="text-gray-600 truncate max-w-[100px]">{client.skuOrderedPrinted || '-'}</span>
                               </div>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Mobile Cards */}
-                <div className="md:hidden grid grid-cols-1 divide-y divide-gray-100">
-                  {filteredClients.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">No clients found.</div>
-                  ) : (
-                    filteredClients.map((client) => (
-                      <div key={client.id} className="p-4 space-y-3 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-bold text-gray-900 flex items-center group/name-copy">
-                              {client.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px] relative group/copy">
+                              {client.measurements || '-'}
+                              {client.measurements && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-6 w-6 absolute -right-2 top-0 opacity-0 group-hover/copy:opacity-100 transition-opacity bg-white/90 shadow-sm"
+                                  onClick={(e) => { e.stopPropagation(); copyToClipboard(client.measurements); }}
+                                  title="Copy Measurements"
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-gray-600 line-clamp-2 max-w-[150px]">
+                              {client.notes || '-'}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-500">
+                            {format(client.updatedAt.toDate(), 'MMM d, yy')}
+                          </TableCell>
+                          <TableCell className="text-right sticky right-0 bg-white group-hover:bg-indigo-50/30">
+                            <div className="flex justify-end gap-2">
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                className="h-4 w-4 ml-1 opacity-60 hover:opacity-100"
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  copyToClipboard(client.name); 
-                                }}
-                                title="Copy Name"
+                                onClick={(e) => { e.stopPropagation(); copySummary(client); }} 
+                                className="h-8 w-8 text-indigo-400 hover:text-indigo-600 cursor-pointer"
+                                title="Copy Summary"
                               >
-                                <Copy className="h-2.5 w-2.5" />
+                                <FileText className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={(e) => { e.stopPropagation(); handleEditClient(client); }} 
+                                className="h-8 w-8 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                                title="Edit"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={(e) => { e.stopPropagation(); handleDeleteClick(client.id!, 'clients'); }} 
+                                className="h-8 w-8 text-gray-400 hover:text-red-600 cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
-                            <div className="text-xs text-gray-500 mt-1">{client.address}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="md:hidden grid grid-cols-1 divide-y divide-gray-100">
+                {filteredClients.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">No clients found.</div>
+                ) : (
+                  filteredClients.map((client) => (
+                    <div key={client.id} className="p-4 space-y-3 hover:bg-gray-50 transition-colors">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-bold text-gray-900 flex items-center group/name-copy">
+                            {client.name}
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-4 w-4 ml-1 opacity-60 hover:opacity-100"
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                copyToClipboard(client.name); 
+                              }}
+                              title="Copy Name"
+                            >
+                              <Copy className="h-2.5 w-2.5" />
+                            </Button>
                           </div>
-                          <div className="flex gap-1 shrink-0">
-                            <Button variant="ghost" size="icon" onClick={() => copySummary(client)} className="h-8 w-8 cursor-pointer text-indigo-500" title="Copy Summary">
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleEditClient(client)} className="h-8 w-8 cursor-pointer">
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(client.id!, 'clients')} className="h-8 w-8 text-red-500 cursor-pointer">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <div className="text-xs text-gray-500 mt-1">{client.address}</div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <InvoiceStatusBadge status={client.invoiceStatus} />
-                          <ProjectStatusBadge status={client.projectStatus} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 pt-2 border-t border-gray-50">
-                          <div className="flex items-center">
-                            <Mail className="h-3 w-3 mr-2 opacity-60" />
-                            <span className="truncate">{client.email}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <Phone className="h-3 w-3 mr-2 opacity-60" />
-                            {client.phone}
-                          </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button variant="ghost" size="icon" onClick={() => copySummary(client)} className="h-8 w-8 cursor-pointer text-indigo-500" title="Copy Summary">
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleEditClient(client)} className="h-8 w-8 cursor-pointer">
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(client.id!, 'clients')} className="h-8 w-8 text-red-500 cursor-pointer">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
+                      <div className="flex flex-wrap gap-2">
+                        <InvoiceStatusBadge status={client.invoiceStatus} />
+                        <ProjectStatusBadge status={client.projectStatus} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 pt-2 border-t border-gray-50">
+                        <div className="flex items-center">
+                          <Mail className="h-3 w-3 mr-2 opacity-60" />
+                          <span className="truncate">{client.email}</span>
+                        </div>
+                        <div className="flex items-center">
+                          <Phone className="h-3 w-3 mr-2 opacity-60" />
+                          {client.phone}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            </TabsContent>
-          ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="orders" className="mt-0" data-testid="tab-content-orders">
+            <div className="modern-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table className="modern-table">
+                  <TableHeader>
+                    <TableRow className="bg-transparent">
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4">Date</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4">Invoice Number</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4" data-testid="column-client-name">Client Name</TableHead>
+                      <TableHead className="font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4" data-testid="column-order-status">Order Status</TableHead>
+                      <TableHead className="text-right font-semibold text-[10px] uppercase tracking-wider text-gray-500 py-4">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredOrders.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-32 text-center text-gray-500">
+                          No orders found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredOrders.map((order) => (
+                        <TableRow 
+                          key={order.id} 
+                          className="hover:bg-gray-50 transition-colors cursor-pointer group border-b border-gray-50 last:border-0"
+                          onClick={() => handleEditOrder(order)}
+                        >
+                          <TableCell className="text-sm text-gray-600">
+                            {order.orderDate ? format(order.orderDate.toDate(), 'MMM d, yyyy') : '---'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-gray-700 font-medium">#{order.invoiceNumber || '---'}</span>
+                              {order.invoiceNumber && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={(e) => { e.stopPropagation(); copyToClipboard(order.invoiceNumber); }}
+                                >
+                                  <Copy className="h-2.5 w-2.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium text-gray-900 group-hover:text-indigo-700 transition-colors">
+                              {order.clientName}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <OrderStatusBadge status={order.status || 'none'} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={(e) => { e.stopPropagation(); handleEditOrder(order); }} 
+                                className="h-8 w-8 text-gray-400 hover:text-indigo-600 cursor-pointer"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={(e) => { e.stopPropagation(); handleDeleteClick(order.id!, 'orders'); }} 
+                                className="h-8 w-8 text-gray-400 hover:text-red-600 cursor-pointer"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </TabsContent>
 
           {/* Book Borrowing Tab */}
           <TabsContent value="book_borrowing" className="mt-0" data-testid="tab-content-borrowing">

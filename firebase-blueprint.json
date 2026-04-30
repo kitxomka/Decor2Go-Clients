@@ -61,6 +61,23 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "numberOfBooks", "email"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A record for a product order.",
+      "type": "object",
+      "properties": {
+        "orderDate": { "type": "string", "format": "date-time" },
+        "invoiceNumber": { "type": "string" },
+        "clientName": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["none", "ordered", "received"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderDate", "invoiceNumber", "clientName", "status"]
     }
   },
   "firestore": {
@@ -71,6 +88,10 @@
     "/bookBorrowing/{borrowingId}": {
       "schema": "BookBorrowing",
       "description": "Collection of book borrowing records."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of product orders."
     }
   }
 }

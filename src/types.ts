@@ -14,6 +14,8 @@ export type ProjectStatus =
   | 'waiting_for_installation'
   | 'completed';
 
+export type OrderStatus = 'none' | 'ordered' | 'received';
+
 export interface Client {
   id?: string;
   category: ClientCategory;
@@ -28,6 +30,7 @@ export interface Client {
   invoiceStatus: InvoiceStatus;
   notes: string;
   projectStatus: ProjectStatus;
+  orderStatus?: OrderStatus;
   installationDate?: Timestamp | null;
   parentClientId?: string;
   projectName?: string;
@@ -45,6 +48,16 @@ export interface BookBorrowing {
   email: string;
   paid: boolean;
   back: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Order {
+  id?: string;
+  orderDate: Timestamp;
+  invoiceNumber: string;
+  clientName: string;
+  status: OrderStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, addDoc, updateDoc, doc, Timestamp } from 'firebase/firestore';
-import { Client, ClientCategory, InvoiceStatus, ProjectStatus } from '../types';
+import { Client, ClientCategory, InvoiceStatus, ProjectStatus, OrderStatus } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/firebase-utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +34,7 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
     invoiceStatus: 'pending',
     notes: '',
     projectStatus: 'design_selection',
+    orderStatus: 'none',
     installationDate: null,
     parentClientId: '',
     projectName: '',
@@ -224,6 +225,22 @@ export function ClientForm({ client, onClose }: ClientFormProps) {
               <SelectItem value="ready_for_installation">Ready for Installation</SelectItem>
               <SelectItem value="waiting_for_installation">Waiting for Installation</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="orderStatus">Order Status</Label>
+          <Select 
+            value={formData.orderStatus || 'none'} 
+            onValueChange={(value: OrderStatus) => setFormData({ ...formData, orderStatus: value })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select order status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="ordered">Ordered</SelectItem>
+              <SelectItem value="received">Received</SelectItem>
             </SelectContent>
           </Select>
         </div>
